@@ -1,69 +1,52 @@
-# Rheewaz Waters — MVP Operations & Sales App
+# Rheewaz Waters — Operations, Sales & Verification App
 
-A full-stack Next.js 14 (App Router) application backed by a real PostgreSQL
-database (Neon) via Drizzle ORM. Implements the full business spec: role-based
-auth with real email verification, weekly Mon–Sat sales tracking, automatic
-calculations (price/outstanding/commission), factory + nylon-roll expenses,
-Boss analytics, and automatic weekly rollover.
+Next.js 14 (App Router) + Drizzle ORM + Neon Postgres. Phase 1 (roles, weekly
+sales, expenses, analytics) plus Phase 2 (debt repayment, immutable worker
+submissions, trucks/trips, AI verification & training architecture, live
+camera boundary) — see `IMPLEMENTATION_REPORT.md` for exactly what changed
+and why.
 
-## 1. Prerequisites
-
-- Node.js 20+
-- A free [Neon](https://neon.tech) Postgres project
-- (Optional but recommended for real email) a [Resend](https://resend.com) API key
-
-## 2. Install
+## 1. Install
 
 ```bash
 npm install
 ```
 
-## 3. Configure environment
+## 2. Configure environment
 
 ```bash
 cp .env.example .env.local
 ```
+Fill in `DATABASE_URL` (Neon), `SESSION_SECRET`, `CRON_SECRET` (all via
+`openssl rand -base64 32`), the seed account credentials, and optionally
+`RESEND_API_KEY` (email), `CAMERA_STREAM_URL` (live camera), and
+`AI_INFERENCE_WEBHOOK_SECRET` (real vision-model integration).
 
-Fill in:
-- `DATABASE_URL` — from your Neon project dashboard
-- `SESSION_SECRET` — `openssl rand -base64 32`
-- `CRON_SECRET` — `openssl rand -base64 32`
-- `SEED_BOSS_EMAIL` / `SEED_BOSS_PASSWORD` / `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`
-- `RESEND_API_KEY` + `EMAIL_FROM` — optional. Without these, worker-invite
-  verification links are printed to the server console instead of emailed,
-  so you can still test the full flow locally.
-- `APP_URL` — `http://localhost:3000` in dev, your real domain in production
+## 3. Run migrations
 
-## 4. Create the database schema
-
-Two ways — pick one:
-
-**A. Let Drizzle generate + apply migrations (recommended):**
+Apply in order:
 ```bash
-npm run db:generate   # should report "no changes" the first time, since
-                       # drizzle/0000_init.sql already matches schema.ts
+npm run db:generate   # should report "no changes" — files already match schema.ts
 npm run db:migrate
 ```
+or paste `drizzle/0000_init.sql` then `drizzle/0001_phase2.sql` into the Neon
+SQL editor. Inspect real tables anytime with `npm run db:studio`.
 
-**B. Or paste `drizzle/0000_init.sql` directly into the Neon SQL editor.**
-
-Either way, you can now inspect every table live with:
-```bash
-npm run db:studio
-```
-which opens Drizzle Studio — a browser GUI over your real Postgres tables
-(or use Neon's own table editor, or any Postgres client like TablePlus/pgAdmin
-pointed at your `DATABASE_URL`).
-
-## 5. Seed the Boss and Admin accounts
+## 4. Seed
 
 ```bash
 npm run db:seed
 ```
+Creates Boss + Admin, the two trucks (Toyota Dyna, Daihatsu Hijet), and — if
+`SEED_WORKER1_EMAIL` / `SEED_WORKER2_EMAIL` are set — the two known workers
+with their truck assignments.
 
-This is idempotent — safe to re-run. It creates the two bootstrap accounts
-(already `email_verified = true`, since they're trusted operators, not
-self-registered) and provisions the current week's rows.
+## 5. Verify the bag-counting rules
+
+```bash
+npx tsx scripts/test-calc.ts
+```
+Runs all 15 numeric acceptance tests from the spec. Should print 15/15 passed.
 
 ## 6. Run it
 
@@ -71,54 +54,17 @@ self-registered) and provisions the current week's rows.
 npm run dev
 ```
 
-Visit `http://localhost:3000` → redirects to `/login`.
+## What's real vs. what's an honest boundary
 
-## How the pieces map to the spec
+Everything in the table below is real, working code against a real
+Postgres database — nothing is mocked:
+- Auth, roles, weekly sales, expenses, analytics (Phase 1)
+- Debt repayment, immutable worker submissions with confirmation modal, truck/trip entities, discrepancy detection, AI training data model, training-run/versioning workflow (Phase 2)
 
-| Spec requirement | Where it lives |
-|---|---|
-| Roles: Boss / Admin / Worker | `users.role` enum + `middleware.ts` route gating + `requireRole()` in every API route |
-| Email verification for workers | `POST /api/workers` generates a token, `lib/mail.ts` sends it, `GET /api/auth/verify-email` activates the account |
-| Soft-delete workers, preserve history | `PATCH /api/workers/[id]` only flips `active`; `daily_records.worker_id` is never orphaned |
-| Weekly rows exist even at zero | `lib/weeks.ts: ensureWeekProvisioned()` — idempotent upsert of all 6 days per active worker, called on every read |
-| Price / Outstanding / Commission formulas | `lib/calc.ts` — the only place these are computed, called by every route that returns figures. Never trust client-submitted totals. |
-| Commission Payable = week commission − previous week outstanding | `GET /api/records` computes each worker's previous week outstanding server-side |
-| Company weekly rollup (Gross Income, Cash Left, etc.) | `calcCompanyWeekSummary()` in `lib/calc.ts` |
-| Nylon rolls tracked separately from Factory Expenses | Separate `nylon_roll_expenses` table; `POST /api/expenses` never adds it into `factory_expenses` |
-| Boss-only historical weeks | `GET /api/records/[weekId]` and `GET /api/weeks` both call `requireRole(["boss"])` |
-| Boss analytics (1W/1M/6M/1Y) | `GET /api/analytics?range=` |
-| Automatic Sunday 23:59:59 WAT rollover | `lib/weeks.ts: closeElapsedWeeks()`, triggered by `vercel.json`'s cron entry hitting `POST /api/weeks/rollover` (protected by `CRON_SECRET`) every Sunday at 22:59 UTC (23:59 WAT) |
-| Server-side authorization, not just hidden UI | Every route calls `requireRole()` / `getSession()` before touching data; `middleware.ts` additionally blocks page navigation by role |
-| Never trust frontend-calculated financial values | Worker's `POST /api/records` only accepts raw inputs (bags/cash/transfer/roadExpenses); the server recomputes price/outstanding/commission independently on every read |
+Two things are deliberately left as **honest integration boundaries** rather
+than faked, per the spec's own instruction not to mock AI/CCTV:
+- **Live camera** (`/camera`, `/api/camera`) — shows real `LIVE`/`CONNECTING`/`OFFLINE` states; only plays actual video once `CAMERA_STREAM_URL` points at a real HLS source.
+- **AI bag counting** (`/api/ai/predictions`) — the counting *rules* (rows→bags, bonus thresholds) are real and tested; there is no computer-vision model running here. The Boss enters physical counts directly (fully functional today), and the webhook is ready for a real inference service to plug into later.
 
-## Deploying
-
-This is a standard Next.js app — deploys cleanly to Vercel:
-
-1. Push this repo to GitHub, import into Vercel.
-2. Add all the env vars from `.env.local` to the Vercel project settings
-   (use your **production** Neon connection string).
-3. Vercel will automatically pick up `vercel.json`'s cron entry for weekly rollover.
-4. Run `npm run db:migrate` and `npm run db:seed` once against your production
-   database (from your local machine with `DATABASE_URL` pointed at prod, or
-   via a one-off Vercel deployment script).
-
-## What's intentionally NOT in this MVP
-
-Per the spec's own priority list: inventory management, payroll, customer
-accounts, chat, push notifications, GPS tracking, AI features, invoicing,
-payment processing, and accounting-system integrations. These are natural
-V2 candidates once the core operational loop is validated.
-
-## Known simplifications worth knowing about
-
-- **Session revocation**: the `sessions` table exists in the schema for
-  future audit/revocation but isn't yet wired into logout — logout just
-  clears the cookie. Fine for an MVP; add a `sessions` lookup to `getSession()`
-  if you want server-side revocation later.
-- **Rate limiting / brute-force protection** on `/api/auth/login` isn't
-  implemented — add it (e.g. via Vercel's edge middleware or a service like
-  Upstash) before going to production with real financial data.
-- **Nylon roll rows** aren't editable/deletable via the UI yet (only
-  appendable) — add a small admin list+delete view if you need to correct
-  mistakes without going into the database directly.
+See `IMPLEMENTATION_REPORT.md` for the full file-by-file breakdown, required
+env vars, and what still needs external infrastructure.

@@ -1,6 +1,7 @@
--- Rheewaz Waters — initial schema
+-- Rheewaz Waters — Phase 1 initial schema
 -- Generated to match src/db/schema.ts. Apply with `npm run db:migrate`,
 -- or paste directly into the Neon SQL editor / any Postgres client.
+-- Apply BEFORE drizzle/0001_phase2.sql.
 
 CREATE TYPE "user_role" AS ENUM ('boss', 'admin', 'worker');
 CREATE TYPE "week_status" AS ENUM ('open', 'closed');
@@ -52,7 +53,6 @@ CREATE TABLE "daily_records" (
 CREATE UNIQUE INDEX "daily_records_week_worker_day_unique" ON "daily_records" ("week_id", "worker_id", "weekday");
 CREATE INDEX "daily_records_week_idx" ON "daily_records" ("week_id");
 CREATE INDEX "daily_records_worker_idx" ON "daily_records" ("worker_id");
--- Guard rails matching the business rules (bags/money can never go negative):
 ALTER TABLE "daily_records" ADD CONSTRAINT "daily_records_bags_nonneg" CHECK ("bags" >= 0);
 ALTER TABLE "daily_records" ADD CONSTRAINT "daily_records_cash_nonneg" CHECK ("cash" >= 0);
 ALTER TABLE "daily_records" ADD CONSTRAINT "daily_records_transfer_nonneg" CHECK ("transfer" >= 0);
@@ -79,7 +79,7 @@ CREATE TABLE "nylon_roll_expenses" (
   "weekday" "weekday" NOT NULL,
   "date" date NOT NULL,
   "amount" numeric(12,2) NOT NULL,
-  "created_by" uuid NOT NULL REFERENCES "users"("id") ON DELETE RESTRICT,
+  "created_by" uuid REFERENCES "users"("id") ON DELETE SET NULL,
   "created_at" timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX "nylon_roll_expenses_week_idx" ON "nylon_roll_expenses" ("week_id");

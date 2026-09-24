@@ -1,8 +1,5 @@
 {
   "crons": [
-    {
-      "path": "/api/weeks/rollover",
-      "schedule": "59 22 * * 0"
-    }
+    { "path": "/api/weeks/rollover", "schedule": "59 22 * * 0" }
   ]
 }

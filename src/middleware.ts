@@ -3,7 +3,6 @@ import { jwtVerify } from "jose";
 
 const COOKIE_NAME = "rw_session";
 
-// Which roles may view which page routes. Anything not listed here is public.
 const ROUTE_ROLES: Record<string, Array<"boss" | "admin" | "worker">> = {
   "/current": ["boss", "admin"],
   "/previous": ["boss"],
@@ -13,6 +12,11 @@ const ROUTE_ROLES: Record<string, Array<"boss" | "admin" | "worker">> = {
   "/today": ["worker"],
   "/myweek": ["worker"],
   "/settings": ["boss", "admin", "worker"],
+  // Phase 2
+  "/debt": ["worker"],
+  "/trips": ["boss"],
+  "/camera": ["boss"],
+  "/training-center": ["boss"],
 };
 
 function secretKey() {
@@ -32,7 +36,6 @@ export async function middleware(req: NextRequest) {
     const role = payload.role as string;
     const allowed = ROUTE_ROLES[matchedRoute];
     if (!allowed.includes(role as "boss" | "admin" | "worker")) {
-      // Logged in, but wrong role for this page — send them to their own home.
       const home = role === "worker" ? "/today" : "/current";
       return NextResponse.redirect(new URL(home, req.url));
     }
@@ -43,5 +46,9 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/current/:path*", "/previous/:path*", "/analytics/:path*", "/workers/:path*", "/expenses/:path*", "/today/:path*", "/myweek/:path*", "/settings/:path*"],
+  matcher: [
+    "/current/:path*", "/previous/:path*", "/analytics/:path*", "/workers/:path*",
+    "/expenses/:path*", "/today/:path*", "/myweek/:path*", "/settings/:path*",
+    "/debt/:path*", "/trips/:path*", "/camera/:path*", "/training-center/:path*",
+  ],
 };
