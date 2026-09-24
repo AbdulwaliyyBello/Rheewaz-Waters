@@ -8,6 +8,13 @@
       "when": 1788610091428,
       "tag": "0000_green_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790275616443,
+      "tag": "0001_woozy_leech",
+      "breakpoints": true
     }
   ]
 }
